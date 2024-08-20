@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { activateUser } from "../controllers/user.controller";
 
 export interface User {
+  id: string;
   name: string;
   email: string;
-  password: string;
+  passwordHash: string;
   avatar: {
     public_id: string;
     url: string;
@@ -15,6 +15,8 @@ export interface User {
     courseId: string;
   }>;
   comparePassword: (password: string) => Promise<boolean>;
+  SignAccessToken: () => string;
+  SignRefreshToken: () => string;
 }
 
 export const RegisterUser = z.object({
@@ -32,3 +34,10 @@ export const ActivateUser = z.object({
 });
 
 export type ActivateUser = z.infer<typeof ActivateUser>;
+
+export const LoginUser = z.object({
+  email: z.string().email(),
+  password: z.string(),
+});
+
+export type LoginUser = z.infer<typeof LoginUser>;

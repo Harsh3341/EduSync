@@ -1,14 +1,15 @@
 require("dotenv").config();
 import { Request, Response, NextFunction } from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, User } from "@prisma/client";
 import ErrorHandler from "../utils/ErrorHandler";
 import { CatchAsyncError } from "../middleware/catchAsyncErrors";
 import jwt, { Secret } from "jsonwebtoken";
 import ejs from "ejs";
-import { RegisterUser, ActivateUser } from "../types";
+import { RegisterUser, ActivateUser, LoginUser } from "../types";
 import path from "path";
 import sendMail from "../utils/sendMail";
-import { encrypt } from "../utils/encrypt";
+import { compare, encrypt } from "../utils/encrypt";
+import { sendToken } from "../utils/jwt";
 
 const prisma = new PrismaClient();
 
@@ -18,11 +19,7 @@ export const registerUser = CatchAsyncError(
       const { success } = RegisterUser.safeParse(req.body);
 
       if (!success) {
-        res.status(400).json({
-          success: false,
-          message: "Invalid data",
-        });
-        return;
+        return next(new ErrorHandler("Invalid data", 400));
       }
 
       const { name, email, password }: RegisterUser = req.body;
@@ -133,3 +130,58 @@ export const createActivationToken = (user: RegisterUser): ActivationToken => {
 
   return { token, activationCode };
 };
+
+export const loginUser = CatchAsyncError(
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { success } = LoginUser.safeParse(req.body);
+
+      if (!success) {
+        return next(new ErrorHandler("Invalid data", 400));
+      }
+
+      const { email, password }: LoginUser = req.body;
+
+      const user = await prisma.user.findUnique({
+        where: {
+          email,
+        },
+        select: {
+          id: true,
+          passwordHash: true,
+        },
+      });
+
+      if (!user) {
+        return next(new ErrorHandler("Invalid credentials", 400));
+      }
+
+      const isPasswordMatch = await compare({
+        password,
+        passwordHash: user.passwordHash,
+      });
+
+      if (!isPasswordMatch) {
+        return next(new ErrorHandler("Invalid credentials", 400));
+      }
+
+      sendToken(user as User, 200, res);
+    } catch (error) {}
+  }
+);
+
+export const logoutUser = CatchAsyncError(
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      res.cookie("accessToken", "", { maxAge: 1 });
+      res.cookie("refreshToken", "", { maxAge: 1 });
+
+      res.status(200).json({
+        success: true,
+        message: "Logged out successfully",
+      });
+    } catch (err: any) {
+      return next(new ErrorHandler(err.message, 400));
+    }
+  }
+);
